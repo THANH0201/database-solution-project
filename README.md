@@ -218,7 +218,7 @@ Main Components:
  
 [Source Code Folder](./src/main/java/com/thanh/project)
 
-[view_trigger_event_index_sql](./src/main/java/com/thanh/project/document/view_trigger_event_index.csv)
+[view_trigger_event_index_sql](document/view_trigger_event_index.csv)
 
 ## 3. Postman test
 This section lists all API endpoints tested using Postman.
