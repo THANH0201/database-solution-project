@@ -1,0 +1,272 @@
+-- 3.3. Database Features
+-- 3.3.1 View
+-- VIEW 1: Customer + Order summary
+CREATE OR REPLACE VIEW customer_order_view AS
+SELECT 
+    c.id AS customer_id,
+    c.first_name,
+    c.last_name,
+    c.email,
+    c.phone,
+    o.id AS order_id,
+    o.order_date,
+    o.delivery_date,
+    o.status,
+    ca.street_address,
+    ca.postal_code,
+    ca.city,
+    ca.country,
+    SUM(oi.quantity * oi.unit_price) AS total_price
+FROM customers c
+JOIN orders o ON o.customer_id = c.id
+JOIN customeraddresses ca ON ca.customer_id = c.id
+JOIN orderitems oi ON oi.order_id = o.id
+GROUP BY 
+    c.id, c.first_name, c.last_name, c.email, c.phone,
+    o.id, o.order_date, o.delivery_date, o.status,
+    ca.street_address, ca.postal_code, ca.city, ca.country;
+
+-- VIEW 2: Order item details
+CREATE OR REPLACE VIEW order_detail_view AS
+SELECT 
+    o.id AS order_id,
+    o.order_date,
+    o.status,
+    p.name AS product_name,
+    oi.quantity,
+    oi.unit_price,
+    (oi.quantity * oi.unit_price) AS item_total,
+    c.first_name,
+    c.last_name
+FROM orders o
+JOIN orderitems oi ON oi.order_id = o.id
+JOIN products p ON p.id = oi.product_id
+JOIN customers c ON c.id = o.customer_id;
+
+-- VIEW 3: Product sales summary
+CREATE OR REPLACE VIEW product_sales_view AS
+SELECT 
+    p.id AS product_id,
+    p.name AS product_name,
+    SUM(oi.quantity) AS total_quantity_sold,
+    SUM(oi.quantity * oi.unit_price) AS total_revenue
+FROM products p
+JOIN orderitems oi ON oi.product_id = p.id
+GROUP BY p.id, p.name;
+
+-- VIEW 4: Monthly revenue summary
+CREATE OR REPLACE VIEW monthly_revenue_view AS
+SELECT 
+    DATE_FORMAT(o.order_date, '%Y-%m') AS month,
+    SUM(oi.quantity * oi.unit_price) AS total_revenue
+FROM orders o
+JOIN orderitems oi ON oi.order_id = o.id
+GROUP BY DATE_FORMAT(o.order_date, '%Y-%m');
+
+-- VIEW 5: Customer total spending
+CREATE OR REPLACE VIEW customer_total_spending_view AS
+SELECT 
+    c.id AS customer_id,
+    c.first_name,
+    c.last_name,
+    SUM(oi.quantity * oi.unit_price) AS total_spent
+FROM customers c
+JOIN orders o ON o.customer_id = c.id
+JOIN orderitems oi ON oi.order_id = o.id
+GROUP BY c.id, c.first_name, c.last_name;
+
+-- VIEW 6: Low stock alert
+CREATE OR REPLACE VIEW low_stock_view AS
+SELECT 
+    id AS product_id,
+    name AS product_name,
+    stock_quantity
+FROM products
+WHERE stock_quantity < 10;
+
+-- VIEW 7: Payment summary
+CREATE VIEW payment_summary_view AS
+SELECT 
+    p.payment_id,
+    p.order_id,
+    p.amount,
+    p.payment_type,
+    p.payment_date
+FROM payment_inheritance p;
+
+-- VIEW 8: Daily payment 
+CREATE VIEW daily_payment_view AS
+SELECT 
+    DATE(payment_date) AS payment_day,
+    SUM(amount) AS total_payment
+FROM payment_inheritance
+GROUP BY DATE(payment_date)
+ORDER BY payment_day;
+
+-- VIEW 9: Revenue payment compare
+CREATE OR REPLACE VIEW revenue_payment_compare_view AS
+SELECT 
+    r.revenue_date,
+    r.total_revenue,
+    COALESCE(p.total_payment, 0) AS total_payment,
+    (r.total_revenue - COALESCE(p.total_payment, 0)) AS difference
+FROM (
+    SELECT 
+        DATE(o.order_date) AS revenue_date,
+        SUM(oi.quantity * oi.unit_price) AS total_revenue
+    FROM orders o
+    JOIN orderitems oi ON oi.order_id = o.id
+    GROUP BY DATE(o.order_date)
+) r
+LEFT JOIN (
+    SELECT 
+        DATE(payment_date) AS payment_day,
+        SUM(amount) AS total_payment
+    FROM payment_inheritance
+    GROUP BY DATE(payment_date)
+) p
+ON r.revenue_date = p.payment_day;
+
+
+-- 3.3.2 INDEX
+CREATE INDEX idx_product_category ON products(category_id);
+CREATE INDEX idx_product_supplier ON products(supplier_id);
+CREATE INDEX idx_order_customer ON orders(customer_id);
+CREATE INDEX idx_order_status ON orders(status);
+CREATE INDEX idx_orderitems_order ON orderitems(order_id);
+CREATE INDEX idx_orderitems_product ON orderitems(product_id);
+
+
+-- 3.3.3 TRIGGER
+-- 1. Auto-set DELIVERED when delivery_date is updated
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS auto_set_delivered;
+CREATE TRIGGER auto_set_delivered
+AFTER UPDATE ON orders
+FOR EACH ROW
+BEGIN
+    IF NEW.delivery_date IS NOT NULL AND OLD.delivery_date IS NULL THEN
+        UPDATE orders
+        SET status = 'DELIVERED'
+        WHERE id = NEW.id;
+    END IF;
+END$$
+
+DELIMITER ;
+
+-- 3. Auto-restock when order is cancelled
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS restock_after_cancel;
+CREATE TRIGGER restock_after_cancel
+AFTER UPDATE ON orders
+FOR EACH ROW
+BEGIN
+    IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
+        UPDATE products p
+        JOIN orderitems oi ON oi.product_id = p.id
+        SET p.stock_quantity = p.stock_quantity + oi.quantity
+        WHERE oi.order_id = NEW.id;
+    END IF;
+END$$
+
+DELIMITER ;
+
+-- 4. Log order status changes
+DROP TABLE IF EXISTS order_status_log;
+CREATE TABLE IF NOT EXISTS order_status_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT,
+    old_status VARCHAR(50),
+    new_status VARCHAR(50),
+    changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS log_status_change;
+CREATE TRIGGER log_status_change
+AFTER UPDATE ON orders
+FOR EACH ROW
+BEGIN
+    IF NEW.status <> OLD.status THEN
+        INSERT INTO order_status_log(order_id, old_status, new_status)
+        VALUES (OLD.id, OLD.status, NEW.status);
+    END IF;
+END$$
+
+DELIMITER ;
+
+-- 5. Log product price changes
+DROP TABLE IF EXISTS product_price_history;
+CREATE TABLE IF NOT EXISTS product_price_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    old_price DECIMAL(10,2),
+    new_price DECIMAL(10,2),
+    changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS product_price_update_trigger;
+CREATE TRIGGER product_price_update_trigger
+AFTER UPDATE ON products
+FOR EACH ROW
+BEGIN
+    IF NEW.price <> OLD.price THEN
+        INSERT INTO product_price_history(product_id, old_price, new_price)
+        VALUES (OLD.id, OLD.price, NEW.price);
+    END IF;
+END$$
+
+DELIMITER ;
+
+
+-- 3.3.4 EVENTS
+SET GLOBAL event_scheduler = ON;
+
+-- Event 1: Delete CANCELLED orders older than 30 days
+DROP EVENT IF EXISTS cleanup_cancelled_orders;
+CREATE EVENT cleanup_cancelled_orders
+ON SCHEDULE EVERY 1 DAY
+DO
+    DELETE FROM orders
+    WHERE status = 'CANCELLED'
+    AND order_date < NOW() - INTERVAL 30 DAY;
+
+-- Event 2: Mark overdue orders
+DROP EVENT IF EXISTS auto_mark_overdue;
+CREATE EVENT auto_mark_overdue
+ON SCHEDULE EVERY 1 HOUR
+DO
+    UPDATE orders
+    SET status = 'OVERDUE'
+    WHERE delivery_date < NOW()
+    AND status = 'NEW';
+
+-- Event 3: Daily revenue report
+DROP TABLE IF EXISTS revenue_daily;
+CREATE TABLE IF NOT EXISTS revenue_daily (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    report_date DATE,
+    total_revenue DECIMAL(10,2)
+);
+
+-- Event 4: Generate daily revenue
+DROP EVENT IF EXISTS generate_daily_revenue;
+CREATE EVENT generate_daily_revenue
+ON SCHEDULE EVERY 1 DAY
+DO
+    INSERT INTO revenue_daily(report_date, total_revenue)
+    SELECT CURDATE(), SUM(oi.quantity * oi.unit_price)
+    FROM orderitems oi
+    JOIN orders o ON o.id = oi.order_id
+    WHERE DATE(o.order_date) = CURDATE();
+
+-- 3.3.5 TEMPORAY FEUTURE
+-- 1. Trigger4: -- 4. Log order status changes
+-- 2. Trigger5: -- 5. Log product price changes
+-- 3. Event3: -- Event 3: Daily revenue report
+-- 4. Event4: -- Event 4: Generate daily revenue
+
+
