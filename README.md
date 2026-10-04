@@ -1,4 +1,4 @@
-# Course Project Data Solution Report
+# Database Solution Project Report
 This project was implemented with the assistance of Microsoft Copilot. Copilot provided code suggestions for SQL views, triggers, and events, providing code suggestions for REST API endpoints; reviewed documentation structure; and assisted with grammar checks.
 ## 1. Project Overview
 This project implements a REST API webshop backend using Spring Boot 4.1.1, Java 21, Maven, MariaDB 11.5, and Postman.
@@ -48,7 +48,7 @@ The system provides:
 ![Database Diagram](./document/database1.png)
 
 ### 2.2. Database Features
-#### 2.2.1 Views API (Method: GET)
+#### 2.2.1 Views
 |Feature|	Desription|	Role|Purpose|
 |-----|------------|--------|-----|
 |customer_order_view|Stores customer information and related order data|	User/Admin|Allows customers and administrators to view order history|
@@ -217,7 +217,8 @@ Main Components:
 - Scheduled Events
  
 [Source Code Folder](./src/main/java/com/thanh/project)
-[view_trigger_event_index.sql](./src/main/java/com/thanh/project/document/view_trigger_event_index.sql)
+
+[view_trigger_event_index_sql](./src/main/java/com/thanh/project/document/view_trigger_event_index.csv)
 
 ## 3. Postman test
 This section lists all API endpoints tested using Postman.

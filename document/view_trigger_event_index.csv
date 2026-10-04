@@ -155,7 +155,7 @@ END$$
 
 DELIMITER ;
 
--- 3. Auto-restock when order is cancelled
+-- 2. Auto-restock when order is cancelled
 
 DELIMITER $$
 DROP TRIGGER IF EXISTS restock_after_cancel;
@@ -173,7 +173,7 @@ END$$
 
 DELIMITER ;
 
--- 4. Log order status changes
+-- 3. Log order status changes
 DROP TABLE IF EXISTS order_status_log;
 CREATE TABLE IF NOT EXISTS order_status_log (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -197,7 +197,7 @@ END$$
 
 DELIMITER ;
 
--- 5. Log product price changes
+-- 4. Log product price changes
 DROP TABLE IF EXISTS product_price_history;
 CREATE TABLE IF NOT EXISTS product_price_history (
     id INT AUTO_INCREMENT PRIMARY KEY,
